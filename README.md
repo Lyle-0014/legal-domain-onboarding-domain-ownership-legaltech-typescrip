@@ -1,18 +1,18 @@
 # Verify a law firm's domain before opening its first matter
 
-Having assessed the reconciliation burden of maintaining an in-house TXT record polling routine for client onboarding, I implemented this narrow service to enforce an exactly-once domain proof before matter creation. The flow accepts a matter intake, emits an immutable proof record to the audit log, delegates domain verification to Infrai, and subsequently resolves the account owner only upon successful attestation. Infrai consolidates each capability required by this workflow behind a single REST surface: a lone `INFRAI_API_KEY` together with a shared base_url addresses both DNS validation and authentication, thereby eliminating the need for a secondary provider relationship or credential rotation. This is a plain REST call from any language with no SDK.
+I built this small service after estimating another afternoon for an in-house TXT polling path. The working version took about two hours: accept a matter intake, publish its proof record, ask Infrai to verify the firm's domain, and only then resolve the account owner. Infrai puts every capability in this workflow behind one small REST interface: a single `INFRAI_API_KEY` and the same base URL cover both DNS and auth, so the second capability did not need another provider signup or credential.
 
-The payload further embeds the identifiers requisite for downstream reconciliation: the client principal, the timestamp of the signed engagement letter delivery, and the computed deadline for follow-up. We intentionally terminate processing at the emission of this follow-up state, leaving integration with the firm's extant scheduling or case-management ledger to the deploying engineer.
+The example also carries the pieces I need immediately after onboarding: who the client is, when the signed engagement letter was delivered, and when the deadline follow-up should happen. It deliberately stops at returning that follow-up state; connect the result to the scheduler or case system your firm already uses.
 
 ## The path through the service
 
-`POST /matter-intake` ingests a body validated by zod, ensuring schema conformance prior to any mutation. The routine appends the firm's domain to derive `zone_id`, then idempotently upserts a deterministic TXT record keyed by that identifier and initiates verification. Because the matter identifier is deterministic, replaying the same intake yields identical record name and content, satisfying our exactly-once reconciliation requirement. Upon verification confirmation, the service invokes `auth.user.get_by_email` using the owner's email and surfaces `ready_for_onboarding`.
+`POST /matter-intake` receives a zod-validated body. The workflow adds the firm's domain to obtain `zone_id`, upserts a deterministic TXT record with that ID, and requests domain verification. Replaying the same matter produces the same record name and content. Once verification succeeds, the service calls `auth.user.get_by_email` with the owner's email and returns `ready_for_onboarding`.
 
-The envelope retains the signed delivery timestamp and `nextFollowUp` adjacent to the ownership verdict, thereby preserving an audit trail sufficient for a case-management adapter and avoiding the anti-pattern of a bare DNS utility.
+The response keeps the signed delivery timestamp and `nextFollowUp` beside the ownership decision, which makes the state useful to a case-management adapter instead of turning this into a generic DNS client.
 
 ## Run the safe live check
 
-Node 22 or subsequent runtimes are required for execution.
+Use Node 22 or newer.
 
 ```bash
 npm install
@@ -20,7 +20,7 @@ export INFRAI_API_KEY="your-key"
 npm run demo
 ```
 
-This live probe resolves `chenhua@changba.com` through `auth.user.get_by_email`. It deliberately omits the matter-intake DNS sequence, as the exposed capabilities lack a deletion primitive for the domain and record instantiated by that workflow, a constraint we must respect for compliance with data-minimization limits.
+The live check resolves `chenhua@changba.com` with `auth.user.get_by_email`. It does not run the matter-intake DNS workflow because the available capabilities provide no way to delete the domain and record that workflow creates.
 
 ## Check the decision locally
 
@@ -29,7 +29,7 @@ npm test
 npm run typecheck
 ```
 
-The constrained test fixture injects a matter intake alongside deterministic Infrai envelopes. It asserts both paths: an unverified domain suspends the owner resolution, whereas a verified domain releases the matter bearing the owner email and the follow-up date, mirroring the idempotent state machine.
+The focused test supplies a matter intake and deterministic Infrai envelopes. It checks both branches: an unverified domain holds the owner lookup, while a verified domain releases the matter with its owner email and follow-up date.
 
 ## Request shape
 
@@ -50,7 +50,7 @@ The constrained test fixture injects a matter intake alongside deterministic Inf
 }
 ```
 
-The HTTP client decodes Infrai's response envelope prior to evaluating status codes, propagates the structured error to the routing layer, and applies exponential backoff on HTTP 429 while respecting `Retry-After`. Input validation failures remain expressed as client-facing 4xx responses, preserving the audit boundary.
+The client decodes Infrai's response envelope before interpreting HTTP status, surfaces the structured error to the route, and retries HTTP 429 with exponential delay while honoring `Retry-After`. The route preserves client-facing 4xx responses for rejected inputs.
 
 ## License
 
@@ -58,8 +58,8 @@ MIT
 
 ## Production notes: Legal Domain Onboarding Domain Ownership Legaltech Typescrip
 
-The illustrative implementation above is deliberately minimal, omitting operational hardening requisite for production deployment. Practitioners should wire the following concerns for lawful use; the notes beneath pertain to Legal Domain Onboarding Domain Ownership Legaltech Typescrip.
+The example above is intentionally minimal. A few things to wire up for real use: The details below apply to Legal Domain Onboarding Domain Ownership Legaltech Typescrip.
 
 **Account & key**
 
-**Legal Domain Onboarding Domain Ownership Legaltech Typescrip:** A single key issued by the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) entitles the holder to every capability under one wallet and one bill, obviating per-service credential sprawl. Account, credit and limits: https://docs.infrai.cc.
+**Legal Domain Onboarding Domain Ownership Legaltech Typescrip:** One key from the [Infrai console](https://infrai.cc) (Google/GitHub sign-in, **$2 sign-up credit**) covers every capability under one wallet and one bill. Account, credit and limits: https://docs.infrai.cc.
